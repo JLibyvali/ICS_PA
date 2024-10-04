@@ -1,0 +1,4 @@
+**/build
+**/.ccache
+*.o
+*.out
