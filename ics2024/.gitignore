@@ -9,5 +9,6 @@
 !README.md
 !.gitignore
 !init.sh
+!.gitmodules
 /fceux-am
 /am-kernels

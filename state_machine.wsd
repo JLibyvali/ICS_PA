@@ -1,0 +1,58 @@
+@startuml add_sequence
+
+state reg0 #Red{
+   state PC0 : 0#
+   PC0 : // mov R1 , 0
+   state R10 : NULL
+   state R20 : NULL
+}
+
+
+state reg1 #Grey{
+   PC1 : 1#
+   PC1 : // mov R2. 0
+   R11 : 0
+   R21 : NULL 
+}
+
+state reg2 #Blue{
+   PC2 : 2#
+   PC2 : // addi R2, R2 ,1
+   R12 : 0
+   state "R22 : #R2 = #R2 + 1" as R22
+}
+
+state regN #Grey{
+    PC3 : 3#
+    PC3 : // add R1, R1 ,R2
+    state "R13 : #R1 = #R2 + #R1" as R13
+    R23 : 
+}
+
+state regM #Grey {
+    PC4 : 4#
+    PC4 : // blt R2, 100 , 2
+    R14 : "#R1 + n"
+    R24 : n
+}
+
+state c <<choice>>
+
+note top of regM : branch if #R2 less than
+
+note left of reg0 : `NULL` indicates that Not initialized.
+
+[*] --> reg0 : Begin
+reg0 --> reg1
+reg1 --> reg2
+
+
+reg2 --> regN : Begin Loop
+regN --> regM  : Step run
+
+regM --> c 
+c  -up-> reg2 : If( #R2 < 100)
+c  ---> [*] : If( #R2 >= 100)
+
+
+@enduml

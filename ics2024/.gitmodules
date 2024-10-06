@@ -1,0 +1,7 @@
+[submodule "fceux-am"]
+active=true
+url="https://github.com/NJU-ProjectN/fceux-am"
+
+[submodule "am-kernel"]
+active=true
+url="https://github.com/NJU-ProjectN/am-kernels"
