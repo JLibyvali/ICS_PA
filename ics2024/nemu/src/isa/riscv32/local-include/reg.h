@@ -16,6 +16,8 @@
 #ifndef __RISCV_REG_H__
 #define __RISCV_REG_H__
 
+#include "macro.h"
+
 #include <common.h>
 
 static inline int check_reg_idx(int idx)

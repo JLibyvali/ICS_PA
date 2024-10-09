@@ -17,6 +17,7 @@
 #define __ISA_H__
 
 // Located at src/isa/$(GUEST_ISA)/include/isa-def.h
+#include "common.h"
 #include <isa-def.h>
 
 // The macro `__GUEST_ISA__` is defined in $(CFLAGS).
@@ -30,8 +31,21 @@ void init_isa();
 
 // reg
 extern CPU_state cpu;
+
+/**
+ * @brief Print ALL register value
+ * 
+ */
 void isa_reg_display();
-word_t isa_reg_str2val(const char *name, bool *success);
+
+/**
+ * @brief  Get given name register value.
+ * 
+ * @param name register name
+ * @param value register value
+ * @return word_t 
+ */
+bool isa_reg_str2val(const char *name, word_t *value);
 
 // exec
 struct Decode;
