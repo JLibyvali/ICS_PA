@@ -1,6 +1,9 @@
 #include "my_cmd.h"
 
+#include "common.h"
+#include "debug.h"
 #include "isa.h"
+#include "macro.h"
 #include "memory/paddr.h"
 #include "memory/vaddr.h"
 
@@ -93,6 +96,7 @@ int cmd_x(char *args)
     size_t N = strtoul(cmd, NULL, 10);
     // Ensure the right N
     assert(N > 0 && N <= MAX_EXAMINE);
+    panic("\"N\" is limited,\"0 < N <=10\".\n");
 
     // Second args EXPR.
     cmd = strtok(NULL, " ");
@@ -165,9 +169,48 @@ int cmd_x(char *args)
     return 0;
 }
 
-int cmd_p(char *args)
+#define MAX_EXPR_LEN      100
+#define MAX_NUMERIC_WIDTH 9
+
+bool expr(char *e, word_t *result);
+
+int  cmd_p(char *args)
 {
-    printf("ARGS: %s\n", args);
+    if (args == NULL)
+        return 0;
+
+    char *str_expr = strdup("");
+
+    char *sub_expr = strtok(args, " ");
+
+    str_expr       = strcat(str_expr, sub_expr);
+    Assert(strlen(sub_expr) <= MAX_NUMERIC_WIDTH, "the \"%s\" is too long: %lu bytes.\n", sub_expr, strlen(sub_expr));
+
+    while (sub_expr)
+    {
+        sub_expr = strtok(NULL, " ");
+
+        if (sub_expr)
+        {
+            str_expr = strcat(str_expr, sub_expr);
+            Assert(
+                strlen(sub_expr) <= MAX_NUMERIC_WIDTH, "the \"%s\" is too long: %lu bytes.\n", sub_expr,
+                strlen(sub_expr)
+            );
+        }
+        Assert(strlen(str_expr) <= MAX_EXPR_LEN, "Too long expression, length <= 100.\n");
+    }
+
+    word_t value;
+    if (expr(str_expr, &value))
+    {
+        Log("Expression \"%s\" value is: %lu", str_expr, value);
+    }
+    else
+    {
+        printf("Expression evaluate failed.\n");
+    }
+
     return 0;
 }
 

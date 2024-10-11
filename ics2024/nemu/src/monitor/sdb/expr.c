@@ -13,17 +13,28 @@
  * See the Mulan PSL v2 for more details.
  ***************************************************************************************/
 
+#include "common.h"
+#include "debug.h"
+
 #include <isa.h>
 
 /* We use the POSIX regex functions to process regular expressions.
  * Type 'man regex' for more information about POSIX regex functions.
  */
 #include <regex.h>
+#include <stdbool.h>
 
 enum
 {
-    TK_NOTYPE = 256,
+    TK_NOTYPE = 256,  // space
     TK_EQ,
+    TK_LPARENT,
+    TK_RPARENT,
+    TK_MUL,
+    TK_DIV,
+    TK_PLUS,
+    TK_SUB,
+    TK_NUM
 
     /* TODO: Add more token types */
 
@@ -39,9 +50,15 @@ static struct rule
      * Pay attention to the precedence level of different rules.
      */
 
-    {" +", TK_NOTYPE},  // spaces
-    {"\\+", '+'},       // plus
-    {"==", TK_EQ},      // equal
+    {"\\(", TK_LPARENT},  // (
+    {"\\)", TK_RPARENT},  // )
+    {" +", TK_NOTYPE},    // spaces
+    {"\\*", TK_MUL},      // multiplication.
+    {"/", TK_DIV},        // division.
+    {"\\+", TK_PLUS},     // plus
+    {"-", TK_SUB},        // subtraction.
+    {"==", TK_EQ},        // equal
+    {"\\b[0-9]{1,9}\\b", TK_NUM}
 };
 
 #define NR_REGEX ARRLEN(rules)
@@ -71,7 +88,7 @@ void           init_regex()
 typedef struct token
 {
     int  type;
-    char str[32];
+    char str[10];  // Max length is 9 number
 } Token;
 
 static Token tokens[32] __attribute__((used)) = {};
@@ -83,7 +100,8 @@ static bool  make_token(char *e)
     int        i;
     regmatch_t pmatch;
 
-    nr_token = 0;
+    nr_token     = 0;
+    char num[10] = {};
 
     while (e[position] != '\0')
     {
@@ -107,7 +125,55 @@ static bool  make_token(char *e)
 
                 switch (rules[i].token_type)
                 {
-                default: TODO();
+                case TK_NOTYPE:
+                    {
+                        break;
+                    }
+                case TK_LPARENT:
+                    {
+                        tokens[nr_token] = (Token){.type = TK_LPARENT, .str = ""};
+                        nr_token++;
+                        break;
+                    }
+                case TK_RPARENT:
+                    {
+                        tokens[nr_token] = (Token){.type = TK_RPARENT, .str = ""};
+                        nr_token++;
+                        break;
+                    }
+                case TK_MUL:
+                    {
+                        tokens[nr_token] = (Token){.type = TK_MUL, .str = ""};
+                        nr_token++;
+                        break;
+                    }
+                case TK_DIV:
+                    {
+                        tokens[nr_token] = (Token){.type = TK_DIV, .str = ""};
+                        nr_token++;
+                        break;
+                    }
+                case TK_PLUS:
+                    {
+                        tokens[nr_token] = (Token){.type = TK_PLUS, .str = ""};
+                        nr_token++;
+                        break;
+                    }
+                case TK_SUB:
+                    {
+                        tokens[nr_token] = (Token){.type = TK_SUB, .str = ""};
+                        nr_token++;
+                        break;
+                    }
+                case TK_NUM:
+                    {
+                        snprintf(num, substr_len + 1, "%s", substr_start);
+                        tokens[nr_token].type = TK_NUM;
+                        strcpy(tokens[nr_token].str, num);
+                        nr_token++;
+                        break;
+                    }
+                default: break;
                 }
 
                 break;
@@ -124,16 +190,42 @@ static bool  make_token(char *e)
     return true;
 }
 
-word_t expr(char *e, bool *success)
+bool expr(char *e, word_t *result)
 {
     if (!make_token(e))
     {
-        *success = false;
-        return 0;
+        return false;
     }
 
     /* TODO: Insert codes to evaluate the expression. */
-    TODO();
+    // TODO();
 
     return 0;
+}
+
+bool numlen_check(const char *_str)
+{
+    bool       res     = false;
+
+    char      *pattern = "\\b[0-9]{1,9}\\b";
+    regex_t    regexp;
+    regmatch_t pmatch;
+
+    int        ret = regcomp(&regexp, pattern, REG_EXTENDED);
+    if (ret)
+    {
+        char error[256];
+        regerror(ret, &regexp, error, sizeof(error));
+        panic("Regular expression is fault:%s.\n", error);
+    }
+
+    ret = regexec(&regexp, _str, 1, &pmatch, 0);
+    if (ret)
+    {
+        char error[256];
+        regerror(ret, &regexp, error, sizeof(error));
+        panic("Regular expression Execute failed:%s.\n", error);
+    }
+
+    int len = pmatch.rm_eo - pmatch.rm_so;
 }
