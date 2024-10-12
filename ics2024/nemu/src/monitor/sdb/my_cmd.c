@@ -3,7 +3,6 @@
 #include "common.h"
 #include "debug.h"
 #include "isa.h"
-#include "macro.h"
 #include "memory/paddr.h"
 #include "memory/vaddr.h"
 
@@ -169,34 +168,34 @@ int cmd_x(char *args)
     return 0;
 }
 
-#define MAX_EXPR_LEN      100
-#define MAX_NUMERIC_WIDTH 9
+#define MAX_EXPR_LEN 100
 
 bool expr(char *e, word_t *result);
+bool numlen_check(const char *_str);
 
 int  cmd_p(char *args)
 {
     if (args == NULL)
         return 0;
 
-    char *str_expr = strdup("");
+    // Must in Heap neither the `regexec` will trigger `malloc():
+    char *str_expr = malloc(MAX_EXPR_LEN);
 
     char *sub_expr = strtok(args, " ");
+    if (strlen(sub_expr) > 31)
+        assert(numlen_check(sub_expr));
 
-    str_expr       = strcat(str_expr, sub_expr);
-    Assert(strlen(sub_expr) <= MAX_NUMERIC_WIDTH, "the \"%s\" is too long: %lu bytes.\n", sub_expr, strlen(sub_expr));
+    strcat(str_expr, sub_expr);
 
-    while (sub_expr)
+    while (sub_expr && *sub_expr)
     {
         sub_expr = strtok(NULL, " ");
 
-        if (sub_expr)
+        if (sub_expr && *sub_expr)
         {
             str_expr = strcat(str_expr, sub_expr);
-            Assert(
-                strlen(sub_expr) <= MAX_NUMERIC_WIDTH, "the \"%s\" is too long: %lu bytes.\n", sub_expr,
-                strlen(sub_expr)
-            );
+            if (strlen(sub_expr) > 31)
+                assert(numlen_check(sub_expr));
         }
         Assert(strlen(str_expr) <= MAX_EXPR_LEN, "Too long expression, length <= 100.\n");
     }

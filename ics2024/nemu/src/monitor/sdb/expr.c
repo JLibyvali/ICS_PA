@@ -15,6 +15,7 @@
 
 #include "common.h"
 #include "debug.h"
+#include "macro.h"
 
 #include <isa.h>
 
@@ -23,6 +24,7 @@
  */
 #include <regex.h>
 #include <stdbool.h>
+#include <sys/types.h>
 
 enum
 {
@@ -58,7 +60,7 @@ static struct rule
     {"\\+", TK_PLUS},     // plus
     {"-", TK_SUB},        // subtraction.
     {"==", TK_EQ},        // equal
-    {"\\b[0-9]{1,9}\\b", TK_NUM}
+    {"\\b[0-9]{1,32}\\b", TK_NUM}
 };
 
 #define NR_REGEX ARRLEN(rules)
@@ -77,9 +79,15 @@ void           init_regex()
     for (i = 0; i < NR_REGEX; i++)
     {
         ret = regcomp(&re[i], rules[i].regex, REG_EXTENDED);
-        if (ret != 0)
+        if (ret)
         {
             regerror(ret, &re[i], error_msg, 128);
+            int temp = 0;
+            while (temp <= i)
+            {
+                regfree(&re[temp]);
+                temp++;
+            }
             panic("regex compilation failed: %s\n%s", error_msg, rules[i].regex);
         }
     }
@@ -88,7 +96,7 @@ void           init_regex()
 typedef struct token
 {
     int  type;
-    char str[10];  // Max length is 9 number
+    char str[32];  // Max length is 9 number
 } Token;
 
 static Token tokens[32] __attribute__((used)) = {};
@@ -108,6 +116,8 @@ static bool  make_token(char *e)
         /* Try all rules one by one. */
         for (i = 0; i < NR_REGEX; i++)
         {
+            // Every time matches from beginning. Emmmm, not good design.
+            //
             if (regexec(&re[i], e + position, 1, &pmatch, 0) == 0 && pmatch.rm_so == 0)
             {
                 char *substr_start = e + position;
@@ -131,37 +141,37 @@ static bool  make_token(char *e)
                     }
                 case TK_LPARENT:
                     {
-                        tokens[nr_token] = (Token){.type = TK_LPARENT, .str = ""};
+                        tokens[nr_token] = (Token){.type = TK_LPARENT, .str = "("};
                         nr_token++;
                         break;
                     }
                 case TK_RPARENT:
                     {
-                        tokens[nr_token] = (Token){.type = TK_RPARENT, .str = ""};
+                        tokens[nr_token] = (Token){.type = TK_RPARENT, .str = ")"};
                         nr_token++;
                         break;
                     }
                 case TK_MUL:
                     {
-                        tokens[nr_token] = (Token){.type = TK_MUL, .str = ""};
+                        tokens[nr_token] = (Token){.type = TK_MUL, .str = "*"};
                         nr_token++;
                         break;
                     }
                 case TK_DIV:
                     {
-                        tokens[nr_token] = (Token){.type = TK_DIV, .str = ""};
+                        tokens[nr_token] = (Token){.type = TK_DIV, .str = "/"};
                         nr_token++;
                         break;
                     }
                 case TK_PLUS:
                     {
-                        tokens[nr_token] = (Token){.type = TK_PLUS, .str = ""};
+                        tokens[nr_token] = (Token){.type = TK_PLUS, .str = "+"};
                         nr_token++;
                         break;
                     }
                 case TK_SUB:
                     {
-                        tokens[nr_token] = (Token){.type = TK_SUB, .str = ""};
+                        tokens[nr_token] = (Token){.type = TK_SUB, .str = "-"};
                         nr_token++;
                         break;
                     }
@@ -190,24 +200,14 @@ static bool  make_token(char *e)
     return true;
 }
 
-bool expr(char *e, word_t *result)
-{
-    if (!make_token(e))
-    {
-        return false;
-    }
-
-    /* TODO: Insert codes to evaluate the expression. */
-    // TODO();
-
-    return 0;
-}
+#define MAX_NUMERIC_WIDTH 32
 
 bool numlen_check(const char *_str)
 {
-    bool       res     = false;
+    char *input = malloc(strlen(_str) * sizeof(char));
+    strcpy(input, _str);  // Using copy of _str.
 
-    char      *pattern = "\\b[0-9]{1,9}\\b";
+    char      *pattern = "\\b[0-9]{1,32}\\b";
     regex_t    regexp;
     regmatch_t pmatch;
 
@@ -216,16 +216,123 @@ bool numlen_check(const char *_str)
     {
         char error[256];
         regerror(ret, &regexp, error, sizeof(error));
-        panic("Regular expression is fault:%s.\n", error);
+        regfree(&regexp);
+        panic("The Regular Expression is fault. Error:%s.\n", error);
     }
 
-    ret = regexec(&regexp, _str, 1, &pmatch, 0);
-    if (ret)
+    while (input && *input)  // Ensure that the string will be empty.
     {
-        char error[256];
-        regerror(ret, &regexp, error, sizeof(error));
-        panic("Regular expression Execute failed:%s.\n", error);
+        ret = regexec(&regexp, input, 1, &pmatch, 0);
+        if (ret)
+        {
+            char msg[256];
+            regerror(ret, &regexp, msg, sizeof(msg));
+            regfree(&regexp);
+            printf("Regex Execute \"%s\" Finished:%s.\n", pattern, msg);
+            return true;
+        }
+
+        int len = pmatch.rm_eo - pmatch.rm_so;
+        if (len >= MAX_NUMERIC_WIDTH)
+        {
+            panic("the width of num %.*s is %d too long.\n", len, _str + pmatch.rm_so, len);
+            regfree(&regexp);
+            return false;
+        }
+
+        // Delete the matched part from string.
+        memmove(input + pmatch.rm_so, input + pmatch.rm_eo, strlen(input + pmatch.rm_eo) + 1);
+    }
+    regfree(&regexp);
+    return true;
+}
+
+static bool parentheses_balanced()
+{
+    int    len = ARRLEN(tokens), i = 0;
+    char   stack[32] = {};
+    size_t top       = 0;
+
+    // Must be even number
+    size_t odd_even  = 0;
+    for (; i < len; i++)
+    {
+        if (tokens[i].type == TK_LPARENT || tokens[i].type == TK_RPARENT)
+            odd_even++;
     }
 
-    int len = pmatch.rm_eo - pmatch.rm_so;
+    if (odd_even & 1)
+        return false;
+
+    // check parentheses balanced.
+    for (i = 0; i < len; i++)
+    {
+        if (tokens[i].type == TK_LPARENT)
+
+            stack[top++] = tokens[i].str[0];
+
+        if (tokens[i].type == TK_RPARENT)
+        {
+            if (stack[0] == '\0')
+                return false;
+
+            if (top)
+                stack[--top] = '\0';
+            else
+                return false;
+        }
+    }
+
+    if (top == 0 && stack[top] == '\0')
+        return true;
+
+    return false;
+}
+
+static void print_tokens()
+{
+    int len = ARRLEN(tokens), i = 0;
+    for (; i < len; i++)
+    {
+        switch (tokens[i].type)
+        {
+        case TK_NOTYPE: break;
+        default:
+            {
+                if (tokens[i].str[0] == '\0')
+                {
+                    break;
+                }
+                printf("tokens[%d]:\t%s\n", i, tokens[i].str);
+                break;
+            }
+        }
+    }
+
+    if (parentheses_balanced())
+        printf("The parenteses is balanced!!\n");
+    else
+    {
+        printf("Unbalanced parentheses.\n");
+    }
+}
+
+bool eval() { return false; }
+
+bool expr(char *e, word_t *result)
+{
+    if (!make_token(e))
+    {
+        return false;
+    }
+
+    /* TODO: Insert codes to evaluate the expression. */
+    // Evaluate.
+    print_tokens();
+
+    if (eval())
+    {
+    }
+
+    return 0;
 }
