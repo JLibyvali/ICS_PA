@@ -88,7 +88,8 @@ void           init_regex()
                 regfree(&re[temp]);
                 temp++;
             }
-            panic("regex compilation failed: %s\n%s", error_msg, rules[i].regex);
+            Log("regex compilation failed: %s\n%s", error_msg, rules[i].regex);
+            panic();
         }
     }
 }
@@ -101,6 +102,8 @@ typedef struct token
 
 static Token tokens[32] __attribute__((used)) = {};
 static int   nr_token __attribute__((used))   = 0;
+
+static int   length                           = ARRLEN(tokens);
 
 static bool  make_token(char *e)
 {
@@ -217,7 +220,8 @@ bool numlen_check(const char *_str)
         char error[256];
         regerror(ret, &regexp, error, sizeof(error));
         regfree(&regexp);
-        panic("The Regular Expression is fault. Error:%s.\n", error);
+        Log("The Regular Expression is fault. Error:%s.\n", error);
+        panic();
     }
 
     while (input && *input)  // Ensure that the string will be empty.
@@ -235,7 +239,9 @@ bool numlen_check(const char *_str)
         int len = pmatch.rm_eo - pmatch.rm_so;
         if (len >= MAX_NUMERIC_WIDTH)
         {
-            panic("the width of num %.*s is %d too long.\n", len, _str + pmatch.rm_so, len);
+
+            Log("the width of num %.*s is %d too long.\n", len, _str + pmatch.rm_so, len);
+            panic();
             regfree(&regexp);
             return false;
         }
@@ -247,15 +253,32 @@ bool numlen_check(const char *_str)
     return true;
 }
 
-static bool parentheses_balanced()
+/**
+ * @brief Check the expression is surround by parentheses.
+ *
+ * @param head The ordinal number of subexpression head
+ * @param tail The ordinal number of subexpression tail
+ */
+static bool parentheses_balanced(int head, int tail)
 {
-    int    len = ARRLEN(tokens), i = 0;
-    char   stack[32] = {};
-    size_t top       = 0;
+
+    if (head < 1)
+        return false;
+
+    // ### First,
+    // Must check the expression is surround by parentheses.
+    if (tokens[head - 1].type != TK_LPARENT || tokens[tail - 1].type == TK_RPARENT)
+        return false;
+
+    // Check parentheses balanced.
+    int    i             = 0;
+    char   stack[length] = {};
+    size_t top           = 0;
 
     // Must be even number
-    size_t odd_even  = 0;
-    for (; i < len; i++)
+    size_t odd_even      = 0;
+
+    for (i = head - 1; i < tail; i++)
     {
         if (tokens[i].type == TK_LPARENT || tokens[i].type == TK_RPARENT)
             odd_even++;
@@ -264,14 +287,13 @@ static bool parentheses_balanced()
     if (odd_even & 1)
         return false;
 
-    // check parentheses balanced.
-    for (i = 0; i < len; i++)
+    for (i = head - 1; i < tail; i++)
     {
-        if (tokens[i].type == TK_LPARENT)
+        if (tokens[i].type == TK_LPARENT)  // If it's left parentheses, push into stack.
 
             stack[top++] = tokens[i].str[0];
 
-        if (tokens[i].type == TK_RPARENT)
+        if (tokens[i].type == TK_RPARENT)  // If it's right parentheses, pop out stack.
         {
             if (stack[0] == '\0')
                 return false;
@@ -283,7 +305,7 @@ static bool parentheses_balanced()
         }
     }
 
-    if (top == 0 && stack[top] == '\0')
+    if (top == 0 && stack[top] == '\0')  // If the stack is still empty, parentheses balanced.
         return true;
 
     return false;
@@ -291,8 +313,8 @@ static bool parentheses_balanced()
 
 static void print_tokens()
 {
-    int len = ARRLEN(tokens), i = 0;
-    for (; i < len; i++)
+    int i = 0;
+    for (; i < length; i++)
     {
         switch (tokens[i].type)
         {
@@ -309,7 +331,7 @@ static void print_tokens()
         }
     }
 
-    if (parentheses_balanced())
+    if (parentheses_balanced(1, length))
         printf("The parenteses is balanced!!\n");
     else
     {
@@ -317,7 +339,161 @@ static void print_tokens()
     }
 }
 
-bool eval() { return false; }
+static int get_main_operation(int head, int tail)
+{
+    int  main_operation = -1;
+
+    int *index_ops      = malloc(length * sizeof(int)), i;
+    int *begin          = index_ops;
+
+    memset(index_ops, -1, length);
+
+    /**
+     * @brief How to get the main operations.
+     * I. main operation is a  operation.
+     * II. main operation isn't surrounded by parentheses.
+     * III. the main operations is the lowest precedence.
+     * IV. If exists many lowest precedence operations, the most right one is main operation.
+     */
+
+    // Extract all operations.
+    for (i = head - 1; i < tail; i++)
+    {
+        if (tokens[i].type == TK_MUL || tokens[i].type == TK_DIV || tokens[i].type == TK_PLUS ||
+            tokens[i].type == TK_SUB)
+            *(index_ops++) = i;  // Store the index not the operation.
+    }
+
+    if (begin[0] == -1)
+        return main_operation;
+
+    // Calculate the main operation.
+    i                     = 0;
+    bool is_inparentheses = false;
+
+    // Is surround by parentheses?
+    while (begin[i] != -1)
+    {
+        int forward = begin[i];
+
+        for (; forward >= 0; forward--)
+        {
+            if (tokens[forward].type == TK_LPARENT)
+            {
+                is_inparentheses = true;
+            }
+        }
+
+        if (is_inparentheses)
+            begin[i] = -1;  // Delete the index of that operation.
+
+        i++;
+    }
+
+    i                = 0;
+    int remained_num = 0;
+
+    // Calculate the options with precedence.
+    while (begin[i] != -1)
+    {
+        if (begin[i] != -1)
+        {
+            remained_num++;
+        }
+
+        if (remained_num)
+        {
+            if (tokens[begin[i]].type == TK_MUL || tokens[begin[i]].type == TK_DIV)
+            {
+                begin[i] = -1;
+                remained_num--;
+            }
+            else if (tokens[begin[i]].type == TK_PLUS ||
+                     tokens[begin[i]].type == TK_SUB)  // main_operation is lowest precedence operation.
+            {
+                if (begin[i] >= main_operation)        // the most right lowest precedence operation.
+                    main_operation = begin[i];
+            }
+            else
+            {
+                Log("Error operations calculate.\n");
+                assert(false);
+            }
+        }
+
+        i++;
+    }
+
+    return main_operation;
+}
+
+/**
+ * @brief
+ *
+ * @param head Ordinal number of begin at expression.
+ * @param tail Ordinal number of end at expression.
+ * @return The ordinal number of token.
+ */
+int eval(int head, int tail)
+{
+    if (head > tail)
+    {
+        return -1;
+    }
+    else if (head == tail)
+    {
+        if (tokens[head - 1].type == TK_NUM)
+            
+    }
+    else if (parentheses_balanced(head, tail))  // If expression is surround by parentheses and parentheses balanced.
+    {
+        return eval(head + 1, tail + 1);        // Delete the surrounding parentheses.
+    }
+    else                                        // Handle another expression without parentheses surrounding.
+    {
+
+        int op_main = get_main_operation(head, tail);
+
+        if (op_main != -1)
+        {
+            printf("The main expression:\n");
+        }
+        else
+        {
+            Log("Get main operation failed.\n");
+            panic();
+        }
+
+        int lval      = eval(head, tail - 1);
+        int rval      = eval(head + 1, tail);
+
+        int operation = tokens[op_main].type;
+
+        switch (operation)
+        {
+        case TK_MUL:
+            {
+                return (lval * rval);
+                break;
+            }
+        case TK_DIV:
+            {
+                if(rval ==0 || lval ==0){
+                    Log("Error When divide operation, Val is 0.\n");
+                    panic();
+                }
+                return ();
+            }
+        case TK_PLUS:
+            {
+            }
+        case TK_SUB:
+            {
+            }
+        }
+    }
+    return 0;
+}
 
 bool expr(char *e, word_t *result)
 {
